@@ -1,0 +1,29 @@
+cat << 'EOF' > .gitignore
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Environment Variables & Secrets
+.env
+.env.local
+*.env
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.next/
+frontend/build/
+
+# IDEs and OS
+.DS_Store
+.vscode/
+.idea/
+EOF
