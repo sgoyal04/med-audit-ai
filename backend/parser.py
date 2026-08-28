@@ -85,23 +85,4 @@ class PDFParserService:
         finally:
             doc.close()
             
-            
-            
-# def main():
-#     file_name = 'input/Easy/PDF_Deid_Deidentification_0.pdf'
-    
-#     doc = PDFParserService.extracted_from_path(file_name)
-#     pages = doc.pages
-    
-    
-#     print(f"File name : {doc.filename}")
-#     print(f"Total_pages: {doc.total_pages}")
-    
-#     for page in pages:
-#         print(f"{page.page_number}")
-#         print(f"{page.raw_text}")
-    
-                
-# if __name__ == "__main__":
-#     main()
     

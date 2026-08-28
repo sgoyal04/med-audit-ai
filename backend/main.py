@@ -5,16 +5,22 @@ Handles PDF uploads, LLM extraction orchestration, caching, and document serving
 
 import os, uuid
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, status
+import traceback
+from fastapi.responses import JSONResponse
+from fastapi import FastAPI, File, UploadFile, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
 
-from models import MasterChronology, ExtractedDocument,SynthesisResponse
+from models import MasterChronology, ExtractedDocument, SynthesisResponse, CaseSummaryResponse
 from parser import PDFParserService
 from extractor import LLMExtractionService
+from database import get_case_by_id, list_all_cases, init_db, save_case, get_db
 
+
+init_db()
 
 # 1. Initialize Application
 app = FastAPI(
@@ -44,8 +50,8 @@ app.add_middleware(
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# In memory store for demo/development purposes
-CHRONOLOGY_DB: Dict[str, Dict[str, Any]] = {}
+# # In memory store for demo/development purposes
+# CHRONOLOGY_DB: Dict[str, Dict[str, Any]] = {}
 
 # Initialize the LLM Extraction Service
 extractor_service = LLMExtractionService()
@@ -53,6 +59,33 @@ extractor_service = LLMExtractionService()
 # -----------------------------------
 # API Endpoints
 # -----------------------------------
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+  """Catches any unhandled 500 error and returns the exact Python traceback in development."""
+  return JSONResponse(
+      status_code=500,
+      content={
+          "error_type": type(exc).__name__,
+          "detail": str(exc),
+          "traceback": traceback.format_exc().splitlines(),
+      },
+  )
+  
+from fastapi.exceptions import ResponseValidationError
+
+
+@app.exception_handler(ResponseValidationError)
+async def response_validation_exception_handler(
+    request: Request, exc: ResponseValidationError
+):
+  return JSONResponse(
+      status_code=500,
+      content={
+          "error_type": "ResponseValidationError",
+          "errors": exc.errors(),  # This tells you the exact offending field!
+      },
+  )
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():
@@ -69,7 +102,7 @@ async def health_check():
     status_code = status.HTTP_201_CREATED,
     tags=["Synthesis"],
 )
-async def synthesize_medical_chronology(file:UploadFile = File(...)):
+async def synthesize_medical_chronology(file:UploadFile = File(...), db: Session = Depends(get_db)):
     """
         Uploads a clinical PDF, extracts text page-by-page, and returns
         a fully synthesized, gronded medical chronology.
@@ -104,21 +137,19 @@ async def synthesize_medical_chronology(file:UploadFile = File(...)):
             f.write(file_bytes)
             
         # Store in state dictionary
-        record = {
-            "case_id": case_id,
-            "filename": file.filename,
-            "total_pages": doc.total_pages,
-            "chronology": chronology,
-            "file_path": str(saved_file_path),
-        }
-        CHRONOLOGY_DB[case_id] = record
-        
-        return SynthesisResponse(
+        record = save_case(
             case_id=case_id,
             filename=file.filename,
             total_pages=doc.total_pages,
-            chronology=chronology,
+            file_path=str(saved_file_path),
+            patient_name=chronology.patient_name,
+            patient_dob=chronology.patient_dob,
+            patient_age=chronology.patient_age,
+            chronology_dict=chronology.model_dump(), 
+            db=db
         )
+        return record
+    
     except HTTPException:
         raise
     except Exception as e:
@@ -132,38 +163,41 @@ async def synthesize_medical_chronology(file:UploadFile = File(...)):
     response_model=SynthesisResponse,
     tags=["Synthesis"],
 )
-async def get_chronology_by_id(case_id: str):
+async def get_chronology_by_id(case_id: str, db: Session = Depends(get_db)):
     """Retrieves an existing synthesized clinical chronology by its unique case_id."""
-    record = CHRONOLOGY_DB.get(case_id)
+    record = get_case_by_id(case_id,db)
     if not record:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No record found for Case Id: {case_id}",
         )
-    return SynthesisResponse(
-        case_id= record["case_id"],
-        filename=record["filename"],
-        total_pages=record["total_pages"],
-        chronology=record["chronology"],
-    )
+    return record
+
+@app.get(
+    "/api/cases",
+    response_model=List[CaseSummaryResponse],
+    tags=["Dashboard"]
+)
+async def get_cases(db:Session = Depends(get_db)):
+    return list_all_cases(db)
+    
     
 @app.get(
     "/api/documents/{case_id}",
     tags=["Documents"]
 )
-async def stream_document_pdf(case_id: str):
+async def stream_document_pdf(case_id: str, db: Session = Depends(get_db)):
     """Streams the raw PDF file to the frontend embedded PDF viewer."""
-    record = CHRONOLOGY_DB.get(case_id)
-    if not record or not os.path.exists(record["file_path"]):
+    record = get_case_by_id(case_id, db)
+    # Use record.file_path (attribute access), not record["file_path"]
+    if not record or not os.path.exists(record.file_path):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="PDF document not found for this case"
         )
     return FileResponse(
-        path=record["file_path"],
+        path=record.file_path,
         media_type="application/pdf",
         content_disposition_type="inline",
     )
-    
 
-    

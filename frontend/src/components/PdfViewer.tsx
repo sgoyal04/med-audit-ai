@@ -10,8 +10,9 @@ interface PdfViewerProps {
 
 export default function PdfViewer({ caseId, currentPage }: PdfViewerProps) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  // The #page=X hash tells the browser's PDF engine which page to display
-  const pdfUrl = `${apiUrl}/api/documents/${caseId}#page=${currentPage}&toolbar=1&navpanes=0`;
+  
+  // Adding query params forces the iframe engine to refresh and honor the hash anchor
+  const pdfUrl = `${apiUrl}/api/documents/${caseId}?page=${currentPage}#page=${currentPage}&toolbar=1&navpanes=0`;
 
   return (
     <div className="h-full flex flex-col bg-slate-900 rounded-xl overflow-hidden border border-slate-800 shadow-sm">
@@ -36,26 +37,14 @@ export default function PdfViewer({ caseId, currentPage }: PdfViewerProps) {
         </div>
       </div>
 
-      {/* PDF Viewport */}
+      {/* PDF Viewport with dynamic key to force remount on page change */}
       <div className="flex-1 w-full h-full bg-slate-800 relative">
-        <object
+        <iframe
           key={`${caseId}-page-${currentPage}`}
-          data={pdfUrl}
-          type="application/pdf"
-          className="w-full h-full"
-        >
-          <div className="flex flex-col items-center justify-center h-full text-slate-400 text-sm gap-2 p-6 text-center">
-            <p>Unable to display PDF directly in your browser.</p>
-            <a
-              href={pdfUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-400 hover:underline flex items-center gap-1"
-            >
-              Open PDF in a new tab <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          </div>
-        </object>
+          src={pdfUrl}
+          className="w-full h-full border-none"
+          title={`Medical Document - Page ${currentPage}`}
+        />
       </div>
     </div>
   );

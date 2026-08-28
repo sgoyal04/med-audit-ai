@@ -21,3 +21,14 @@ export interface SynthesisResponse {
   total_pages: number;
   chronology: MasterChronology;
 }
+
+export interface CaseSummary {
+  case_id: string;
+  filename: string;
+  total_pages: number;
+  patient_name: string | null;
+  patient_dob: string | null;
+  patient_age: number | null;
+  event_count: number;
+  created_at: string;
+}
