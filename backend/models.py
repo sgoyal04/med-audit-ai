@@ -1,8 +1,7 @@
 """ models.py: Core Pydantic schemas for MedAudit AI. """
-
+from __future__ import annotations
 from typing import List, Optional
-from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field 
 
 class PDFPageContent(BaseModel):
     """ Container for raw text extracted from a single PDF page. """
@@ -47,27 +46,6 @@ class MasterChronology(BaseModel):
 
     patient_name: Optional[str] = Field(default=None,description="Full legal name of the patient from headers or demographic blocks.")
     patient_dob: Optional[str] = Field(default=None,description="Patient Date of Birth, normalized strictly to ISO format YYYY-MM-DD.")
-    patient_age: Optional[str] = Field(default=None,description="Patient age as an integer or string (e.g., '46').")
+    patient_age: Optional[int] = Field(default=None,description="Patient age as an integer or string (e.g., '46').")
     events: List[ClinicalEvent] = Field(default_factory=list,description="All chronological medical events, past visits, and lab tests.")
         
-class CaseSummaryResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    
-    case_id: str
-    filename:str
-    total_pages:int
-    patient_name:Optional[str] = None
-    patient_dob:Optional[str] = None
-    patient_age:Optional[int] = None
-    event_count:int = 0
-    created_at:datetime         
-    
-    # TODO: str
-    
-class SynthesisResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    
-    case_id: str = Field(...,description="Unique uuid identifier for this clinical case.")
-    filename: str = Field(...,description="Original filename of the document.")
-    total_pages: int = Field(...,description="Total pages processed from the pdf.")
-    chronology: MasterChronology = Field(...,description="The synthesized clinical chronology")

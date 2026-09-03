@@ -1,26 +1,34 @@
 """ 
 main.py: FastAPI Backend Service for MedAudit AI.
-Handles PDF uploads, LLM extraction orchestration, caching, and document serving.
 """
 
+from __future__ import annotations
+import time
 import os, uuid
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Annotated, List
 
 import traceback
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import ResponseValidationError
 from fastapi import FastAPI, File, UploadFile, HTTPException, status, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
-from models import MasterChronology, ExtractedDocument, SynthesisResponse, CaseSummaryResponse
+from models import MasterChronology, ExtractedDocument
+from schemas import SynthesisResponse, CaseSummaryResponse, UserCreate, UserResponse,UserUpdate
 from parser import PDFParserService
 from extractor import LLMExtractionService
-from database import get_case_by_id, list_all_cases, init_db, save_case, get_db
+import database
 
+from contextlib import asynccontextmanager
+from fastapi.exception_handlers import http_exception_handler,request_validation_exception_handler
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-init_db()
+database.init_db()
 
 # 1. Initialize Application
 app = FastAPI(
@@ -28,6 +36,9 @@ app = FastAPI(
     description="Intelligence Clinical Document Ingestion and Chronology Synthesizer",
     version="1.0.0",
 )
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/media", StaticFiles(directory="media"), name="media")
 
 # 2. Define allowed origins (frontend urls)
 origins = [
@@ -72,20 +83,18 @@ async def global_exception_handler(request: Request, exc: Exception):
       },
   )
   
-from fastapi.exceptions import ResponseValidationError
-
 
 @app.exception_handler(ResponseValidationError)
 async def response_validation_exception_handler(
     request: Request, exc: ResponseValidationError
 ):
-  return JSONResponse(
-      status_code=500,
-      content={
-          "error_type": "ResponseValidationError",
-          "errors": exc.errors(),  # This tells you the exact offending field!
-      },
-  )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error_type": "ResponseValidationError",
+            "errors": exc.errors(),  # This tells you the exact offending field!
+        },
+    )
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():
@@ -96,17 +105,123 @@ async def health_check():
         "engine": "gemini-3.6-flash",
     }
     
+# TODO: validate email    
+@app.post(
+    "/api/user",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["User"]
+)
+async def create_user(user: UserCreate, db: Annotated[Session, Depends(database.get_db)]):
+    """
+        Creates a new user account if it does not exist already.
+    """
+    
+    existing_user = database.get_user_by_name(user.username,db)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already exists."
+        )
+        
+    existing_email = database.get_user_by_email(user_email=user.email,db=db)
+    if existing_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="There is an account associated with this email."
+        )
+        
+    try:
+        user_id = str(uuid.uuid4())
+        user = database.create_new_user(user_id=user_id,username=user.username,user_email=user.email,db=db)
+        return user
+
+    except HTTPException:
+            raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while creating a new user: {str(e)}",
+        )
+        
+# TODO: Validate email
+@app.patch(
+    "/api/users/{user_id}",
+    response_model=UserResponse,
+    tags=["User"]
+)
+async def update_user(user_id:str, user_update:UserUpdate,db:Annotated[Session, Depends(database.get_db)]):
+    user = database.get_user_by_id(user_id=user_id,db=db)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found."
+        )
+    
+    if user_update.username is not None and user.username != user_update.username:
+        existing_user = database.get_user_by_name(user_update.username)
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already in use."
+            )
+            
+    if user_update.email is not None and user.email != user_update.email:
+        existing_user = database.get_user_by_email(user_update.email)
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This email associated with another account."
+            )
+    updated_user = database.update_user(
+                    user_email=user_update.email, 
+                    user_id=user_update.id,
+                    username=user_update.username,
+                    image_file=user_update.image_file,
+                    db=db    
+                )
+    return update_user
+
+@app.delete(
+    "/api/users/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["User"]
+)
+async def delete_user(user_id:str, db:Annotated[Session, Depends(database.get_db)]):
+    existing_user = database.get_user_by_id(user_id=user_id,db=db)
+    if not existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    database.delete_user(user_id,db)
+        
+@app.get(
+    "/api/users/{user_id}",
+    response_model=UserResponse,
+    tags=["User"],
+)
+async def get_user(user_id:int, db:Annotated[Session, Depends(database.get_db)]):
+    user = database.get_user_by_id(user_id)
+    if user:
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="User does not exist. Please create a new account."
+    )
+    
 @app.post(
     "/api/chronology/synthesize",
     response_model = SynthesisResponse,
     status_code = status.HTTP_201_CREATED,
-    tags=["Synthesis"],
+    tags=["Case"],
 )
-async def synthesize_medical_chronology(file:UploadFile = File(...), db: Session = Depends(get_db)):
+async def create_case(db: Annotated[Session, Depends(database.get_db)], user_id:str, file:UploadFile = File(...)):
     """
         Uploads a clinical PDF, extracts text page-by-page, and returns
         a fully synthesized, gronded medical chronology.
     """
+    
     # Validate file type
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
@@ -121,24 +236,25 @@ async def synthesize_medical_chronology(file:UploadFile = File(...), db: Session
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="The uploaded PDF file is empty.",
             )
-            
+         
         # Parse PDF into pages using PyMuPDF service
         doc: ExtractedDocument = PDFParserService.extract_from_bytes(
             file_bytes=file_bytes, filename=file.filename
         )
         
         # Run LLM semantic Extraction Engine
-        chronology: MasterChronology = extractor_service.extract_chronology(doc)
+        chronology: MasterChronology = extractor_service.extract_chronology(doc)    
         
         # Persist PDF to disk so that frontend can display it in viewport
         case_id = str(uuid.uuid4())
         saved_file_path = UPLOAD_DIR / f"{case_id}.pdf"
         with open(saved_file_path, "wb") as f:
             f.write(file_bytes)
-            
+          
         # Store in state dictionary
-        record = save_case(
+        record = database.save_case(
             case_id=case_id,
+            user_id=user_id,
             filename=file.filename,
             total_pages=doc.total_pages,
             file_path=str(saved_file_path),
@@ -161,11 +277,11 @@ async def synthesize_medical_chronology(file:UploadFile = File(...), db: Session
 @app.get(
     "/api/chronology/{case_id}",
     response_model=SynthesisResponse,
-    tags=["Synthesis"],
+    tags=["Case"],
 )
-async def get_chronology_by_id(case_id: str, db: Session = Depends(get_db)):
+async def get_case_by_id(case_id: str, db: Annotated[Session, Depends(database.get_db)]):
     """Retrieves an existing synthesized clinical chronology by its unique case_id."""
-    record = get_case_by_id(case_id,db)
+    record = database.get_case_by_id(case_id,db)
     if not record:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -178,17 +294,24 @@ async def get_chronology_by_id(case_id: str, db: Session = Depends(get_db)):
     response_model=List[CaseSummaryResponse],
     tags=["Dashboard"]
 )
-async def get_cases(db:Session = Depends(get_db)):
-    return list_all_cases(db)
-    
+async def get_cases(db: Annotated[Session, Depends(database.get_db)]):
+    return database.list_all_cases(db)
+ 
+@app.get(
+    "/api/users/{user_id}/cases",
+    response_model=List[CaseSummaryResponse],
+    tags=["Dashboard"]
+)
+async def get_cases_by_user_id(user_id:str, db: Annotated[Session, Depends(database.get_db)]):
+    return database.list_all_user_cases(user_id,db)   
     
 @app.get(
     "/api/documents/{case_id}",
     tags=["Documents"]
 )
-async def stream_document_pdf(case_id: str, db: Session = Depends(get_db)):
+async def stream_document_pdf(case_id: str, db: Annotated[Session, Depends(database.get_db)]):
     """Streams the raw PDF file to the frontend embedded PDF viewer."""
-    record = get_case_by_id(case_id, db)
+    record = database.get_case_by_id(case_id, db)
     # Use record.file_path (attribute access), not record["file_path"]
     if not record or not os.path.exists(record.file_path):
         raise HTTPException(

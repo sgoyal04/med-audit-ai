@@ -1,7 +1,7 @@
 """
 extractor.py: Document-level LLM Extraction Engine using Google GenAI SDK and .env configuration.
 """
-import os, time
+import os, time, re
 from typing import Optional
 from dotenv import load_dotenv
 from google import genai
@@ -11,7 +11,6 @@ from models import ExtractedDocument, MasterChronology
 
 # Load environment variables from .env file
 load_dotenv()
-
 
 class LLMExtractionService:
     def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-3.6-flash"):

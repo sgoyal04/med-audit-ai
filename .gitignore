@@ -27,3 +27,5 @@ frontend/build/
 .vscode/
 .idea/
 EOF
+node_modules
+*.txt
