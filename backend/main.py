@@ -3,7 +3,6 @@ main.py: FastAPI Backend Service for MedAudit AI.
 """
 
 from __future__ import annotations
-import time
 import os, uuid
 from pathlib import Path
 from typing import Annotated, List
@@ -24,9 +23,6 @@ from extractor import LLMExtractionService
 import database
 
 from contextlib import asynccontextmanager
-from fastapi.exception_handlers import http_exception_handler,request_validation_exception_handler
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 database.init_db()
 
@@ -44,7 +40,7 @@ app.mount("/media", StaticFiles(directory="media"), name="media")
 origins = [
     "http://localhost:3000",          # Local React/Next.js dev server
     "http://127.0.0.1:5500",          # Live Server / HTML frontend
-    "https://your-frontend-domain.com" # Production frontend
+    "https://frontend-domain.com" # Production frontend
 ]
 
 # 3. Configure CORS (Cross-Origin Resource Sharing)
@@ -72,7 +68,7 @@ extractor_service = LLMExtractionService()
 # -----------------------------------
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
+def global_exception_handler(request: Request, exc: Exception):
   """Catches any unhandled 500 error and returns the exact Python traceback in development."""
   return JSONResponse(
       status_code=500,
@@ -85,7 +81,7 @@ async def global_exception_handler(request: Request, exc: Exception):
   
 
 @app.exception_handler(ResponseValidationError)
-async def response_validation_exception_handler(
+def response_validation_exception_handler(
     request: Request, exc: ResponseValidationError
 ):
     return JSONResponse(
@@ -97,7 +93,7 @@ async def response_validation_exception_handler(
     )
 
 @app.get("/api/health", tags=["Health"])
-async def health_check():
+def health_check():
     """Health check endpoints to verify backend status."""
     return {
         "status":"healthy",
@@ -112,7 +108,7 @@ async def health_check():
     status_code=status.HTTP_201_CREATED,
     tags=["User"]
 )
-async def create_user(user: UserCreate, db: Annotated[Session, Depends(database.get_db)]):
+def create_user(user: UserCreate, db: Annotated[Session, Depends(database.get_db)]):
     """
         Creates a new user account if it does not exist already.
     """
@@ -150,7 +146,7 @@ async def create_user(user: UserCreate, db: Annotated[Session, Depends(database.
     response_model=UserResponse,
     tags=["User"]
 )
-async def update_user(user_id:str, user_update:UserUpdate,db:Annotated[Session, Depends(database.get_db)]):
+def update_user(user_id:str, user_update:UserUpdate,db:Annotated[Session, Depends(database.get_db)]):
     user = database.get_user_by_id(user_id=user_id,db=db)
     if not user:
         raise HTTPException(
@@ -187,7 +183,7 @@ async def update_user(user_id:str, user_update:UserUpdate,db:Annotated[Session, 
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["User"]
 )
-async def delete_user(user_id:str, db:Annotated[Session, Depends(database.get_db)]):
+def delete_user(user_id:str, db:Annotated[Session, Depends(database.get_db)]):
     existing_user = database.get_user_by_id(user_id=user_id,db=db)
     if not existing_user:
         raise HTTPException(
@@ -201,8 +197,8 @@ async def delete_user(user_id:str, db:Annotated[Session, Depends(database.get_db
     response_model=UserResponse,
     tags=["User"],
 )
-async def get_user(user_id:int, db:Annotated[Session, Depends(database.get_db)]):
-    user = database.get_user_by_id(user_id)
+def get_user(user_id:str, db:Annotated[Session, Depends(database.get_db)]):
+    user = database.get_user_by_id(user_id,db)
     if user:
         return user
     raise HTTPException(
@@ -279,7 +275,7 @@ async def create_case(db: Annotated[Session, Depends(database.get_db)], user_id:
     response_model=SynthesisResponse,
     tags=["Case"],
 )
-async def get_case_by_id(case_id: str, db: Annotated[Session, Depends(database.get_db)]):
+def get_case_by_id(case_id: str, db: Annotated[Session, Depends(database.get_db)]):
     """Retrieves an existing synthesized clinical chronology by its unique case_id."""
     record = database.get_case_by_id(case_id,db)
     if not record:
@@ -294,7 +290,7 @@ async def get_case_by_id(case_id: str, db: Annotated[Session, Depends(database.g
     response_model=List[CaseSummaryResponse],
     tags=["Dashboard"]
 )
-async def get_cases(db: Annotated[Session, Depends(database.get_db)]):
+def get_cases(db: Annotated[Session, Depends(database.get_db)]):
     return database.list_all_cases(db)
  
 @app.get(
@@ -302,14 +298,14 @@ async def get_cases(db: Annotated[Session, Depends(database.get_db)]):
     response_model=List[CaseSummaryResponse],
     tags=["Dashboard"]
 )
-async def get_cases_by_user_id(user_id:str, db: Annotated[Session, Depends(database.get_db)]):
+def get_cases_by_user_id(user_id:str, db: Annotated[Session, Depends(database.get_db)]):
     return database.list_all_user_cases(user_id,db)   
     
 @app.get(
     "/api/documents/{case_id}",
     tags=["Documents"]
 )
-async def stream_document_pdf(case_id: str, db: Annotated[Session, Depends(database.get_db)]):
+def stream_document_pdf(case_id: str, db: Annotated[Session, Depends(database.get_db)]):
     """Streams the raw PDF file to the frontend embedded PDF viewer."""
     record = database.get_case_by_id(case_id, db)
     # Use record.file_path (attribute access), not record["file_path"]

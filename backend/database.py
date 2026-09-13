@@ -11,7 +11,7 @@ from sqlalchemy import select, ForeignKey
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import sessionmaker, DeclarativeBase, Session
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 
 
 DATABASE_URL = "sqlite+pysqlite:///app.db"

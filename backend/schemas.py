@@ -17,14 +17,12 @@ class UserCreate(UserBase):
 
 # TODO: Include Cases here
 class UserResponse(UserBase):
-    
     id: str = Field(...,description="unique uuid identifier for user")
     image_file: Optional[str] = Field(default=None, description="Original image file.")
     image_path: str = Field(..., description="path of the image stored on the backend server")
     
 class UserUpdate(UserBase):
     image_file: Optional[str] = Field(default=None, description="Original image file.")
-
 
 class CaseBase(BaseModel):
     case_id: str = Field(...,description="Unique uuid identifier for this clinical case.")
