@@ -63,6 +63,44 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 # Initialize the LLM Extraction Service
 extractor_service = LLMExtractionService()
 
+# Dependancy injections
+type db_dependancy = Annotated[Session, Depends(database.get_db)]
+
+def get_existing_user(user_id:str, db: db_dependancy):
+    "Fetches user by user id"
+    user = database.get_user_by_id(user_id=user_id,db=db)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found."
+        )
+    return user
+
+def validate_user_details(user:UserCreate, db:db_dependancy) -> UserCreate:
+    if user.username is None or user.email is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username and email can not be none/empty string"
+        )
+    existing_user = database.get_user_by_name(user.username,db)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already exists."
+        )
+        
+    existing_email = database.get_user_by_email(user.email,db)
+    if existing_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="There is an account associated with this email."
+        )
+    return user
+    
+
+type user_dependancy = Annotated[database.User, Depends(get_existing_user)]
+type validate_user_dependancy = Annotated[UserCreate, Depends(validate_user_details)]    
+
 # -----------------------------------
 # API Endpoints
 # -----------------------------------
@@ -108,24 +146,12 @@ def health_check():
     status_code=status.HTTP_201_CREATED,
     tags=["User"]
 )
-def create_user(user: UserCreate, db: Annotated[Session, Depends(database.get_db)]):
+def create_user(user:validate_user_dependancy, db: db_dependancy):
     """
         Creates a new user account if it does not exist already.
     """
     
-    existing_user = database.get_user_by_name(user.username,db)
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already exists."
-        )
-        
-    existing_email = database.get_user_by_email(user_email=user.email,db=db)
-    if existing_email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="There is an account associated with this email."
-        )
+    # ensure_valid_user_details(user_email=user.email,username=user.username,db=db)
         
     try:
         user_id = str(uuid.uuid4())
@@ -141,70 +167,40 @@ def create_user(user: UserCreate, db: Annotated[Session, Depends(database.get_db
         )
         
 # TODO: Validate email
+# Verification handled by user dependancy
 @app.patch(
     "/api/users/{user_id}",
     response_model=UserResponse,
     tags=["User"]
 )
-def update_user(user_id:str, user_update:UserUpdate,db:Annotated[Session, Depends(database.get_db)]):
-    user = database.get_user_by_id(user_id=user_id,db=db)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found."
-        )
+def update_user(user:user_dependancy, validated_user:validate_user_dependancy, db:db_dependancy):
     
-    if user_update.username is not None and user.username != user_update.username:
-        existing_user = database.get_user_by_name(user_update.username)
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already in use."
-            )
-            
-    if user_update.email is not None and user.email != user_update.email:
-        existing_user = database.get_user_by_email(user_update.email)
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This email associated with another account."
-            )
+    # ensure_valid_user_details(username=user_update.username,user_email=user_update.email,db=db)
     updated_user = database.update_user(
-                    user_email=user_update.email, 
-                    user_id=user_update.id,
-                    username=user_update.username,
-                    image_file=user_update.image_file,
+                    user_id=user.id,
+                    user_email=validated_user.email, 
+                    username=validated_user.username,
                     db=db    
                 )
-    return update_user
+    return updated_user
 
+# Verification handled by user dependancy
 @app.delete(
     "/api/users/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["User"]
 )
-def delete_user(user_id:str, db:Annotated[Session, Depends(database.get_db)]):
-    existing_user = database.get_user_by_id(user_id=user_id,db=db)
-    if not existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    database.delete_user(user_id,db)
+def delete_user(user:user_dependancy, db:db_dependancy):
+    
+    database.delete_user(user.id,db)
         
 @app.get(
     "/api/users/{user_id}",
     response_model=UserResponse,
     tags=["User"],
 )
-def get_user(user_id:str, db:Annotated[Session, Depends(database.get_db)]):
-    user = database.get_user_by_id(user_id,db)
-    if user:
-        return user
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="User does not exist. Please create a new account."
-    )
+def get_user(user:user_dependancy, db:db_dependancy):
+    return user
     
 @app.post(
     "/api/chronology/synthesize",
@@ -212,7 +208,7 @@ def get_user(user_id:str, db:Annotated[Session, Depends(database.get_db)]):
     status_code = status.HTTP_201_CREATED,
     tags=["Case"],
 )
-async def create_case(db: Annotated[Session, Depends(database.get_db)], user_id:str, file:UploadFile = File(...)):
+async def create_case(db: db_dependancy, user_id:str, file:UploadFile = File(...)):
     """
         Uploads a clinical PDF, extracts text page-by-page, and returns
         a fully synthesized, gronded medical chronology.
@@ -275,7 +271,7 @@ async def create_case(db: Annotated[Session, Depends(database.get_db)], user_id:
     response_model=SynthesisResponse,
     tags=["Case"],
 )
-def get_case_by_id(case_id: str, db: Annotated[Session, Depends(database.get_db)]):
+def get_case_by_id(case_id: str, db: db_dependancy):
     """Retrieves an existing synthesized clinical chronology by its unique case_id."""
     record = database.get_case_by_id(case_id,db)
     if not record:
@@ -290,7 +286,7 @@ def get_case_by_id(case_id: str, db: Annotated[Session, Depends(database.get_db)
     response_model=List[CaseSummaryResponse],
     tags=["Dashboard"]
 )
-def get_cases(db: Annotated[Session, Depends(database.get_db)]):
+def get_cases(db: db_dependancy):
     return database.list_all_cases(db)
  
 @app.get(
@@ -298,14 +294,14 @@ def get_cases(db: Annotated[Session, Depends(database.get_db)]):
     response_model=List[CaseSummaryResponse],
     tags=["Dashboard"]
 )
-def get_cases_by_user_id(user_id:str, db: Annotated[Session, Depends(database.get_db)]):
+def get_cases_by_user_id(user_id:str, db: db_dependancy):
     return database.list_all_user_cases(user_id,db)   
     
 @app.get(
     "/api/documents/{case_id}",
     tags=["Documents"]
 )
-def stream_document_pdf(case_id: str, db: Annotated[Session, Depends(database.get_db)]):
+def stream_document_pdf(case_id: str, db: db_dependancy):
     """Streams the raw PDF file to the frontend embedded PDF viewer."""
     record = database.get_case_by_id(case_id, db)
     # Use record.file_path (attribute access), not record["file_path"]

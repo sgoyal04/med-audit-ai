@@ -22,7 +22,7 @@ class UserResponse(UserBase):
     image_path: str = Field(..., description="path of the image stored on the backend server")
     
 class UserUpdate(UserBase):
-    image_file: Optional[str] = Field(default=None, description="Original image file.")
+    pass
 
 class CaseBase(BaseModel):
     case_id: str = Field(...,description="Unique uuid identifier for this clinical case.")

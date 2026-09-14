@@ -97,13 +97,13 @@ def get_user_by_email(user_email:str, db:Session) -> User:
     user = db.execute(stmt).scalars().first()
     return user
 
-def update_user(user_id:str, username:str, user_email:str,image_file:str, db:Session) -> User:
+def update_user(user_id:str, username:str, user_email:str, db:Session) -> User:
     stmt = select(User).where(User.id == user_id)
     user = db.execute(stmt).scalars().first()
     user.username = username
     user.email = user_email
-    if image_file is not None:
-        user.image_file = image_file
+    # if image_file is not None:
+    #     user.image_file = image_file
     db.commit()
     db.refresh(user)
     return user
