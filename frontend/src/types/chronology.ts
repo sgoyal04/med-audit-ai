@@ -11,7 +11,7 @@ export interface ClinicalEvent {
 export interface MasterChronology {
   patient_name: string | null;
   patient_dob: string | null;
-  patient_age: string | null;
+  patient_age: number | null;
   events: ClinicalEvent[];
 }
 

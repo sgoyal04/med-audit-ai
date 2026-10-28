@@ -46,6 +46,6 @@ class MasterChronology(BaseModel):
 
     patient_name: Optional[str] = Field(default=None,description="Full legal name of the patient from headers or demographic blocks.")
     patient_dob: Optional[str] = Field(default=None,description="Patient Date of Birth, normalized strictly to ISO format YYYY-MM-DD.")
-    patient_age: Optional[int] = Field(default=None,description="Patient age as an integer or string (e.g., '46').")
+    patient_age: Optional[int] = Field(default=None,description="Patient age as an integer (e.g., '46').")
     events: List[ClinicalEvent] = Field(default_factory=list,description="All chronological medical events, past visits, and lab tests.")
         

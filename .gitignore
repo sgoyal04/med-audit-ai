@@ -1,4 +1,3 @@
-cat << 'EOF' > .gitignore
 # Virtual Environment
 .venv/
 venv/
@@ -11,21 +10,28 @@ __pycache__/
 *.so
 .pytest_cache/
 
+# Databases & Local Uploads
+*.db
+*.sqlite3
+backend/uploads/*.pdf
+backend/media/
+
 # Environment Variables & Secrets
 .env
 .env.local
 *.env
 
 # Node / Frontend
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.next/
 frontend/build/
+**/.next/
 
-# IDEs and OS
+# IDEs, OS & Repomix dumps
 .DS_Store
 .vscode/
 .idea/
-EOF
-node_modules
 *.txt
+*.xml

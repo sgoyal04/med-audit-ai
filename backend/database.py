@@ -49,9 +49,9 @@ class CaseRecord(Base):
     filename: Mapped[str] = mapped_column(String, nullable=False)
     total_pages: Mapped[int]= mapped_column(Integer, nullable=False)
     file_path: Mapped[str] = mapped_column(String, nullable=False)
-    patient_name: Mapped[str] = mapped_column(String, nullable=True, index=True)
-    patient_dob: Mapped[str] = mapped_column(String, nullable=True)
-    patient_age: Mapped[str] = mapped_column(String, nullable=True)
+    patient_name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    patient_dob: Mapped[str | None] = mapped_column(String, nullable=True)
+    patient_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
     chronology: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda:datetime.now(timezone.utc))
     
